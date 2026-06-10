@@ -46,7 +46,7 @@ export async function runHistoricSeed(options?: {
   // ── 1. Download and rebuild industry benchmarks ───────────────────────────
   onProgress('Downloading Work Sponsorship CoS XLSX from GOV.UK…')
   let benchmarkFile: IndustryBenchmarkFile
-  let benchmarksRefreshed = true
+  const benchmarksRefreshed = true
 
   try {
     benchmarkFile = await downloadAndSaveBenchmarks()

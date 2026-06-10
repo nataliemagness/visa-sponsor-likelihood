@@ -1,8 +1,10 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
-import { getCompanyBySlug, countCompanies, updateCompanyWithCH } from "@/lib/db/store"
-import { scoreCompany } from "@/lib/scoring"
+import { getCompanyBySlug, countCompanies, updateCompanyWithCH, updateCompanyWithReed } from "@/lib/db/store"
+import { scoreCompany, sizeTierLabel, yearsIncorporated } from "@/lib/scoring"
 import { fetchCHByName } from "@/lib/ch-api"
+import { fetchSponsoredJobCount } from "@/lib/reed-api"
+import { sicToIndustry, nameToIndustry } from "@/lib/cos-api"
 import { getCompanyBySlug as getMockBySlug } from "@/lib/mock-data"
 import { ScoreRing } from "@/components/score-ring"
 import { SponsorHistoryChart } from "@/components/sponsor-history-chart"
@@ -11,6 +13,9 @@ const REAL_SIGNAL_LABELS: Record<string, string> = {
   licenceStatus:           "Licence Rating",
   companyStatus:           "Company Status",
   industrySponsorshipRate: "Industry Sponsorship Rate",
+  liveJobSignal:           "Live Sponsored Jobs",
+  companySize:             "Company Size",
+  international:           "Company Maturity",
   routeScope:              "Sponsor Route",
 }
 
@@ -60,6 +65,21 @@ export default async function CompanyPage({
       const chData = await fetchCHByName(company.name)
       if (chData) {
         updateCompanyWithCH(company.slug, chData)
+        company = getCompanyBySlug(slug) ?? company
+      }
+    }
+
+    // Reed: fetch if never fetched, or if TTL (24h) has expired
+    const reedTtlMs = 24 * 60 * 60 * 1000
+    // eslint-disable-next-line react-hooks/purity
+    const nowMs = Date.now()
+    const reedStale =
+      !company.liveJobFetchedAt ||
+      nowMs - new Date(company.liveJobFetchedAt).getTime() > reedTtlMs
+    if (reedStale && process.env.REED_API_KEY) {
+      const count = await fetchSponsoredJobCount(company.name)
+      if (count !== null) {
+        updateCompanyWithReed(company.slug, count)
         company = getCompanyBySlug(slug) ?? company
       }
     }
@@ -116,7 +136,7 @@ export default async function CompanyPage({
               <ScoreRing score={breakdown.score} />
               <div className="w-full pt-4 border-t border-[#2a2a2a] text-xs text-[#9ca3af] space-y-1.5">
                 <div className="flex justify-between">
-                  <span>Signals used</span><span className="text-white">4</span>
+                  <span>Signals used</span><span className="text-white">7</span>
                 </div>
                 <div className="flex justify-between">
                   <span>CH data</span>
@@ -136,6 +156,22 @@ export default async function CompanyPage({
                     <span className="text-white">~{company.employeeCount.toLocaleString()}</span>
                   </div>
                 )}
+                <div className="flex justify-between">
+                  <span>Live jobs (Reed)</span>
+                  <span className={
+                    company.liveJobCount === null
+                      ? "text-[#9ca3af]"
+                      : company.liveJobCount === 0
+                        ? "text-[#9ca3af]"
+                        : "text-[#22c55e]"
+                  }>
+                    {company.liveJobCount === null
+                      ? "Pending"
+                      : company.liveJobCount === 0
+                        ? "None found"
+                        : `${company.liveJobCount} role${company.liveJobCount === 1 ? "" : "s"}`}
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -160,50 +196,103 @@ export default async function CompanyPage({
             </div>
           </div>
 
-          {/* Companies House */}
-          {company.chFetchedAt && (
-            <div className="bg-[#111111] border border-[#2a2a2a] rounded-2xl p-6 mb-4">
-              <p className="text-xs font-semibold text-[#9ca3af] uppercase tracking-widest mb-4">Companies House</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                {company.companyNumber && (
-                  <div>
-                    <span className="text-xs text-[#9ca3af] block mb-0.5">Company number</span>
-                    <span className="text-white font-mono">{company.companyNumber}</span>
-                  </div>
-                )}
-                {company.chStatus && (
-                  <div>
-                    <span className="text-xs text-[#9ca3af] block mb-0.5">Status</span>
-                    <span className="text-white capitalize">{company.chStatus}</span>
-                  </div>
-                )}
-                {company.incorporationDate && (
-                  <div>
-                    <span className="text-xs text-[#9ca3af] block mb-0.5">Incorporated</span>
-                    <span className="text-white">{company.incorporationDate}</span>
-                  </div>
-                )}
-                {company.registeredAddress && (
-                  <div className="sm:col-span-2">
-                    <span className="text-xs text-[#9ca3af] block mb-0.5">Registered address</span>
-                    <span className="text-white">{company.registeredAddress}</span>
-                  </div>
-                )}
-                {company.sicCodes && company.sicCodes.length > 0 && (
-                  <div className="sm:col-span-2">
-                    <span className="text-xs text-[#9ca3af] block mb-1.5">SIC codes</span>
-                    <div className="flex gap-2 flex-wrap">
-                      {company.sicCodes.map((code) => (
-                        <span key={code} className="text-xs font-mono bg-[#1a1a1a] border border-[#2a2a2a] px-2 py-0.5 rounded-md text-[#9ca3af]">
-                          {code}
-                        </span>
-                      ))}
+          {/* Company Profile */}
+          {company.chFetchedAt && (() => {
+            const tier = sizeTierLabel(company.employeeCount)
+            const yrs = yearsIncorporated(company.incorporationDate)
+            const sicIndustry = sicToIndustry(company.sicCodes)
+            const inferredIndustry = !sicIndustry ? nameToIndustry(company.name) : null
+            const industryLabel = sicIndustry ?? inferredIndustry
+            return (
+              <div className="bg-[#111111] border border-[#2a2a2a] rounded-2xl p-6 mb-4">
+                <p className="text-xs font-semibold text-[#9ca3af] uppercase tracking-widest mb-4">Company Profile</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+
+                  {/* Size tier */}
+                  {tier && (
+                    <div>
+                      <span className="text-xs text-[#9ca3af] block mb-1">Size</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-white font-medium">{tier}</span>
+                        {company.employeeCount !== null && (
+                          <span className="text-xs text-[#9ca3af]">~{company.employeeCount.toLocaleString()} employees</span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+
+                  {/* Years incorporated */}
+                  {yrs !== null && (
+                    <div>
+                      <span className="text-xs text-[#9ca3af] block mb-1">Incorporated</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-white font-medium">{company.incorporationDate}</span>
+                        <span className="text-xs text-[#9ca3af]">{yrs} year{yrs === 1 ? '' : 's'} ago</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Company number */}
+                  {company.companyNumber && (
+                    <div>
+                      <span className="text-xs text-[#9ca3af] block mb-1">CH number</span>
+                      <span className="text-white font-mono">{company.companyNumber}</span>
+                    </div>
+                  )}
+
+                  {/* Status */}
+                  {company.chStatus && (
+                    <div>
+                      <span className="text-xs text-[#9ca3af] block mb-1">Status</span>
+                      <span className="text-white capitalize">{company.chStatus}</span>
+                    </div>
+                  )}
+
+                  {/* Industry label */}
+                  {industryLabel && (
+                    <div className="sm:col-span-2">
+                      <span className="text-xs text-[#9ca3af] block mb-1">
+                        Industry {inferredIndustry ? '(inferred from name)' : '(SIC mapping)'}
+                      </span>
+                      <span className="text-white">{industryLabel}</span>
+                    </div>
+                  )}
+
+                  {/* SIC codes */}
+                  {company.sicCodes && company.sicCodes.length > 0 && (
+                    <div className="sm:col-span-2">
+                      <span className="text-xs text-[#9ca3af] block mb-1.5">SIC codes</span>
+                      <div className="flex gap-2 flex-wrap">
+                        {company.sicCodes.map((code) => (
+                          <span key={code} className="text-xs font-mono bg-[#1a1a1a] border border-[#2a2a2a] px-2 py-0.5 rounded-md text-[#9ca3af]">
+                            {code}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Note for LLPs / overseas companies with no SIC codes */}
+                  {company.sicCodes && company.sicCodes.length === 0 && (
+                    <div className="sm:col-span-2">
+                      <span className="text-xs text-[#9ca3af]/50 italic">
+                        SIC codes not published by Companies House for this entity type
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Registered address */}
+                  {company.registeredAddress && (
+                    <div className="sm:col-span-2">
+                      <span className="text-xs text-[#9ca3af] block mb-1">Registered address</span>
+                      <span className="text-white">{company.registeredAddress}</span>
+                    </div>
+                  )}
+
+                </div>
               </div>
-            </div>
-          )}
+            )
+          })()}
 
           {/* Register details */}
           <div className="bg-[#111111] border border-[#2a2a2a] rounded-2xl p-6">
