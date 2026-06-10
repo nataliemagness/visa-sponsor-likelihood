@@ -44,12 +44,8 @@ export default function Home() {
               : ""}
           </p>
         ) : (
-          <p className="text-sm text-[#f59e0b]/80 mb-12">
-            No data loaded yet —{" "}
-            <Link href="/admin" className="underline underline-offset-2 hover:text-[#f59e0b]">
-              seed the register
-            </Link>{" "}
-            to get started
+          <p className="text-sm text-[#9ca3af]/60 mb-12">
+            Demo mode — showing sample companies. Full register coming soon.
           </p>
         )}
 
@@ -66,7 +62,7 @@ export default function Home() {
           <p className="text-sm text-[#9ca3af] mb-6">
             {total > 0
               ? "Search any licensed UK sponsor to see their likelihood score."
-              : "Seed real data to search across 55k+ licensed UK sponsors."}
+              : "Try Tata Consultancy Services, Deloitte, or JPMorgan Chase."}
           </p>
           <CompanySearch />
         </div>

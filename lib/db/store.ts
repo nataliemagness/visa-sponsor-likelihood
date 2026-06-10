@@ -21,6 +21,8 @@ export type CompanyRecord = {
   employeeAccountsType: string | null // raw CH accounts type ("micro-entity", "full", etc.)
   incorporationDate: string | null
   chFetchedAt: string | null
+  liveJobCount: number | null       // sponsored job count from Reed.co.uk
+  liveJobFetchedAt: string | null   // ISO timestamp of last Reed fetch (TTL 24h)
   lastUpdated: string
 }
 
@@ -109,14 +111,22 @@ export function getSeededAt(): string | null {
   }
 }
 
+function safeSave(data: DataFile): void {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true })
+    fs.writeFileSync(DB_PATH, JSON.stringify(data))
+  } catch {
+    // Silently fail on read-only filesystems (Vercel serverless)
+  }
+}
+
 export function saveCompanies(companies: CompanyRecord[]): void {
-  fs.mkdirSync(DATA_DIR, { recursive: true })
   const data: DataFile = {
     seededAt: new Date().toISOString(),
     count: companies.length,
     companies,
   }
-  fs.writeFileSync(DB_PATH, JSON.stringify(data))
+  safeSave(data)
   global.__sponsorsStore = buildStore(companies)
 }
 
@@ -149,12 +159,31 @@ export function updateCompanyWithCH(slug: string, ch: CHUpdate): void {
   }
 
   const existing = loadFile()
-  const data: DataFile = {
+  safeSave({
     seededAt: existing?.seededAt ?? new Date().toISOString(),
     count: store.companies.length,
     companies: store.companies,
+  })
+}
+
+/** Single-company Reed update (used by lazy page-visit enrichment). Writes to disk immediately. */
+export function updateCompanyWithReed(slug: string, liveJobCount: number): void {
+  const store = getStore()
+  const idx = store.companies.findIndex((c) => c.slug === slug)
+  if (idx === -1) return
+
+  store.companies[idx] = {
+    ...store.companies[idx],
+    liveJobCount,
+    liveJobFetchedAt: new Date().toISOString(),
   }
-  fs.writeFileSync(DB_PATH, JSON.stringify(data))
+
+  const existing = loadFile()
+  safeSave({
+    seededAt: existing?.seededAt ?? new Date().toISOString(),
+    count: store.companies.length,
+    companies: store.companies,
+  })
 }
 
 /** Bulk CH update used by seed:historic. Accumulates all changes then writes once. */
@@ -183,12 +212,11 @@ export function bulkUpdateCH(updates: Map<string, CHUpdate>): number {
 
   if (applied > 0) {
     const existing = loadFile()
-    const data: DataFile = {
+    safeSave({
       seededAt: existing?.seededAt ?? now,
       count: store.companies.length,
       companies: store.companies,
-    }
-    fs.writeFileSync(DB_PATH, JSON.stringify(data))
+    })
   }
   return applied
 }
