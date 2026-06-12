@@ -1,5 +1,5 @@
 import { downloadAndSaveBenchmarks, type IndustryBenchmarkFile } from './cos-api'
-import { getCompanies, countCompanies, bulkUpdateCH, type CHUpdate } from './db/store'
+import { countCompanies, bulkUpdateCH, getUnenrichedCompanies, countEnrichedCompanies, type CHUpdate } from './db/store'
 import { fetchCHByName } from './ch-api'
 
 export type HistoricSeedResult = {
@@ -39,7 +39,7 @@ export async function runHistoricSeed(options?: {
   const { chBatchLimit = 200, onProgress = () => {} } = options ?? {}
   const start = Date.now()
 
-  if (countCompanies() === 0) {
+  if (await countCompanies() === 0) {
     throw new Error('Sponsor register not seeded yet — run "Seed real data" first.')
   }
 
@@ -66,26 +66,18 @@ export async function runHistoricSeed(options?: {
     return buildResult(benchmarkFile, benchmarksRefreshed, 0, 0, 0, 0, start)
   }
 
-  const companies = getCompanies()
-  const unenriched = companies.filter(c => !c.chFetchedAt)
-  const alreadyHad = companies.length - unenriched.length
+  // Turso: query only unenriched rows sorted by priority.
+  // JSON fallback: same ordering done in JS.
+  const [toFetch, alreadyHad] = await Promise.all([
+    getUnenrichedCompanies(chBatchLimit),
+    countEnrichedCompanies(),
+  ])
+  const totalUnenriched = await countCompanies().then(n => n - alreadyHad)
+  const skippedLimit = Math.max(0, totalUnenriched - toFetch.length)
 
   onProgress(
-    `${unenriched.length} companies without CH data (${alreadyHad} already enriched)`,
+    `${totalUnenriched} companies without CH data (${alreadyHad} already enriched)`,
   )
-
-  // Prioritise: A-rated first, then Skilled Worker route, then alphabetical
-  const prioritised = [...unenriched].sort((a, b) => {
-    const aRank = (a.sponsorRating?.toLowerCase().startsWith('a') ? 0 : 2) +
-                  (a.sponsorRoute?.toLowerCase().includes('skilled') ? 0 : 1)
-    const bRank = (b.sponsorRating?.toLowerCase().startsWith('a') ? 0 : 2) +
-                  (b.sponsorRoute?.toLowerCase().includes('skilled') ? 0 : 1)
-    if (aRank !== bRank) return aRank - bRank
-    return a.name.localeCompare(b.name)
-  })
-
-  const toFetch = prioritised.slice(0, chBatchLimit)
-  const skippedLimit = Math.max(0, unenriched.length - chBatchLimit)
 
   // Accumulate updates in memory — one bulk write at the end avoids N disk writes
   const updates = new Map<string, CHUpdate>()
@@ -113,16 +105,15 @@ export async function runHistoricSeed(options?: {
 
     if ((i + 1) % 50 === 0 || i === toFetch.length - 1) {
       onProgress(`CH enrichment: ${i + 1}/${toFetch.length} processed (${fetched} matched)`)
-      // Flush accumulated updates to disk every 50 companies so progress isn't lost
       if (updates.size > 0) {
-        bulkUpdateCH(updates)
+        await bulkUpdateCH(updates)
         updates.clear()
       }
     }
   }
 
   // Final flush
-  if (updates.size > 0) bulkUpdateCH(updates)
+  if (updates.size > 0) await bulkUpdateCH(updates)
 
   return buildResult(benchmarkFile, benchmarksRefreshed, fetched, failed, alreadyHad, skippedLimit, start)
 }

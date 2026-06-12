@@ -57,15 +57,15 @@ export default async function CompanyPage({
   const { slug } = await params
 
   // ── Real data path ──────────────────────────────────────────────────────────
-  if (countCompanies() > 0) {
-    let company = getCompanyBySlug(slug ?? "")
+  if (await countCompanies() > 0) {
+    let company = await getCompanyBySlug(slug ?? "")
     if (!company) notFound()
 
     if (!company.chFetchedAt && process.env.COMPANIES_HOUSE_API_KEY) {
       const chData = await fetchCHByName(company.name)
       if (chData) {
-        updateCompanyWithCH(company.slug, chData)
-        company = getCompanyBySlug(slug) ?? company
+        await updateCompanyWithCH(company.slug, chData)
+        company = await getCompanyBySlug(slug) ?? company
       }
     }
 
@@ -79,8 +79,8 @@ export default async function CompanyPage({
     if (reedStale && process.env.REED_API_KEY) {
       const count = await fetchSponsoredJobCount(company.name)
       if (count !== null) {
-        updateCompanyWithReed(company.slug, count)
-        company = getCompanyBySlug(slug) ?? company
+        await updateCompanyWithReed(company.slug, count)
+        company = await getCompanyBySlug(slug) ?? company
       }
     }
 

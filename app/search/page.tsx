@@ -27,7 +27,7 @@ export default async function SearchPage({
   const params = await searchParams
   const role = params.role ?? ""
   const industry = params.industry
-  const total = countCompanies()
+  const total = await countCompanies()
 
   if (total === 0) {
     return (
@@ -59,7 +59,7 @@ export default async function SearchPage({
     )
   }
 
-  const results = searchCompanies(role, industry)
+  const results = await searchCompanies(role, industry)
 
   return (
     <div className="min-h-screen bg-[#0a0a0a]">

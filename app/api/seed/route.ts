@@ -8,7 +8,7 @@ export async function POST() {
   try {
     const start = Date.now()
     const result = await runSeed()
-    saveCompanies(result.companies)
+    await saveCompanies(result.companies)
 
     return NextResponse.json({
       success: true,

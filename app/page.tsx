@@ -3,9 +3,8 @@ import { SearchForm } from "@/components/search-form"
 import { CompanySearch } from "@/components/company-search"
 import { countCompanies, getSeededAt } from "@/lib/db/store"
 
-export default function Home() {
-  const total = countCompanies()
-  const seededAt = getSeededAt()
+export default async function Home() {
+  const [total, seededAt] = await Promise.all([countCompanies(), getSeededAt()])
 
   return (
     <div className="min-h-screen bg-[#0a0a0a]">
