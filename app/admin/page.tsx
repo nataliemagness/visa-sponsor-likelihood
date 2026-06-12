@@ -239,14 +239,17 @@ export default function AdminPage() {
         <div className="bg-[#111111] border border-[#2a2a2a] rounded-2xl p-6">
           <h2 className="text-base font-semibold text-white mb-1">Scoring signals</h2>
           <p className="text-sm text-[#9ca3af] mb-4 leading-relaxed">
-            After seeding, each company score uses four signals with these weights:
+            After seeding, each company score uses seven signals with these weights:
           </p>
           <div className="space-y-2">
             {[
-              { label: "Licence rating (A/B)",        weight: "35%", note: "From register" },
-              { label: "Company status",               weight: "25%", note: "From Companies House" },
-              { label: "Industry sponsorship rate",    weight: "30%", note: "From CoS XLSX" },
-              { label: "Sponsor route scope",          weight: "10%", note: "From register" },
+              { label: "Licence rating (A/B)",        weight: "30%", note: "From register" },
+              { label: "Company status",               weight: "20%", note: "From Companies House" },
+              { label: "Industry sponsorship rate",    weight: "20%", note: "From CoS XLSX" },
+              { label: "Live sponsored jobs (Reed)",   weight: "10%", note: "Reed.co.uk API" },
+              { label: "Company size",                 weight: "10%", note: "From Companies House" },
+              { label: "Company maturity",             weight:  "5%", note: "From Companies House" },
+              { label: "Sponsor route scope",          weight:  "5%", note: "From register" },
             ].map(({ label, weight, note }) => (
               <div key={label} className="flex items-center justify-between text-xs">
                 <span className="text-[#9ca3af]">{label}</span>

@@ -150,6 +150,8 @@ export async function runSeed(): Promise<SeedResult> {
       employeeAccountsType: null,
       incorporationDate: null,
       chFetchedAt: null,
+      liveJobCount: null,
+      liveJobFetchedAt: null,
       lastUpdated: now,
     })
   }

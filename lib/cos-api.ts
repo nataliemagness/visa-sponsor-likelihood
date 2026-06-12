@@ -100,6 +100,85 @@ export function sicToIndustry(sicCodes: string[] | null | undefined): string | n
   return null
 }
 
+// ── Name-based industry fallback ─────────────────────────────────────────────
+// LLPs, overseas companies, and UK establishments don't return sic_codes from
+// the Companies House API. We infer industry from known firm names and keywords.
+
+// Layer 1: well-known firm names whose registered names contain no industry keywords
+const KNOWN_FIRM_PATTERNS: [RegExp, string][] = [
+  // Big Four + mid-tier accounting / audit
+  [/\bkpmg\b/i,                                          'Professional, Scientific and Technical Activities'],
+  [/\bdeloitte\b/i,                                      'Professional, Scientific and Technical Activities'],
+  [/\bpricewaterhousecoopers\b/i,                        'Professional, Scientific and Technical Activities'],
+  [/\bernst\s*(?:&|and)\s*young\b/i,                     'Professional, Scientific and Technical Activities'],
+  [/\bgrant\s+thornton\b/i,                              'Professional, Scientific and Technical Activities'],
+  [/\bbdo\s+llp\b/i,                                     'Professional, Scientific and Technical Activities'],
+  [/\brsm\s+uk\b/i,                                      'Professional, Scientific and Technical Activities'],
+  [/\bmazars\b/i,                                        'Professional, Scientific and Technical Activities'],
+  [/\bforvis\s+mazars\b/i,                               'Professional, Scientific and Technical Activities'],
+  // Strategy / management consulting
+  [/\bmckinsey\b/i,                                      'Professional, Scientific and Technical Activities'],
+  [/\bbain\s*(?:&|and)\s*company\b/i,                    'Professional, Scientific and Technical Activities'],
+  [/\bboston\s+consulting\b/i,                           'Professional, Scientific and Technical Activities'],
+  [/\boliver\s+wyman\b/i,                                'Professional, Scientific and Technical Activities'],
+  [/\bbooz\b/i,                                          'Professional, Scientific and Technical Activities'],
+  [/\barthur\s+d\.?\s*little\b/i,                        'Professional, Scientific and Technical Activities'],
+  // Magic Circle + Silver Circle law firms
+  [/\bclifford\s+chance\b/i,                             'Professional, Scientific and Technical Activities'],
+  [/\blinklaters\b/i,                                    'Professional, Scientific and Technical Activities'],
+  [/\bfreshfields\b/i,                                   'Professional, Scientific and Technical Activities'],
+  [/\bslaughter\s+and\s+may\b/i,                         'Professional, Scientific and Technical Activities'],
+  [/\ballen\s*(?:&|and)\s*overy\b/i,                     'Professional, Scientific and Technical Activities'],
+  [/\bhogan\s+lovells\b/i,                               'Professional, Scientific and Technical Activities'],
+  [/\bnorton\s+rose\b/i,                                 'Professional, Scientific and Technical Activities'],
+  [/\bashurst\b/i,                                       'Professional, Scientific and Technical Activities'],
+  [/\bherbert\s+smith\b/i,                               'Professional, Scientific and Technical Activities'],
+  [/\beversheds\b/i,                                     'Professional, Scientific and Technical Activities'],
+  // Large IT services / offshore delivery (typically overseas-company or uk-establishment)
+  [/\btata\s+consultancy\b/i,                            'Information and Communications'],
+  [/\binfosys\b/i,                                       'Information and Communications'],
+  [/\bwipro\b/i,                                         'Information and Communications'],
+  [/\bcognizant\b/i,                                     'Information and Communications'],
+  [/\bhcl\s+(?:technologies|tech)\b/i,                   'Information and Communications'],
+  [/\bmphasis\b/i,                                       'Information and Communications'],
+  [/\bhexaware\b/i,                                      'Information and Communications'],
+  [/\btech\s+mahindra\b/i,                               'Information and Communications'],
+  // Staffing / recruitment (often have opaque names)
+  [/\bmanpower\b/i,                                      'Administrative and support service activities'],
+  [/\badecco\b/i,                                        'Administrative and support service activities'],
+  [/\brandstad\b/i,                                      'Administrative and support service activities'],
+]
+
+// Layer 2: keyword patterns for descriptive company names
+const KEYWORD_INDUSTRY_PATTERNS: [RegExp, string][] = [
+  [/\b(?:management\s+consult|strategy\s+consult|business\s+consult|consult(?:ing|ancy|ants?)|advisor[sy]|advisory\s+service|accountan|accounting|audit(?:ing|ors?)|tax\s+(?:advisor|service|consult)|chartered\s+(?:accountan|surveyor)|actuari|valuati|solicitor|barrister|law\s+firm|legal\s+service|patent\s+attorn|architect|structural\s+engin|surveying|quantity\s+surveyor)\b/i,
+   'Professional, Scientific and Technical Activities'],
+  [/\b(?:bank(?:ing)?|financ(?:e|ial|ing)|insurance|invest(?:ment|ing)|capital\s+(?:management|partners)|asset\s+manag|fund\s+manag|wealth\s+manag|securities|trading\s+(?:house|company)|credit\s+(?:union|company)|lending|mortgage)\b/i,
+   'Financial and Insurance Activities'],
+  [/\b(?:hospital|health(?:care)?|clinic(?:al)?|medical\s+(?:centre|service)|nhs\s+trust|care\s+home|nursing\s+home|dental\s+(?:practice|clinic)|pharmaceu|pharmacy|therapeutics|biotech(?:nology)?)\b/i,
+   'Human Health and Social Work Activities'],
+  [/\b(?:software|technology\s+(?:service|solution)|digital\s+(?:service|solution|agency)|cyber(?:security)?|data\s+(?:analytic|science|service)|cloud\s+(?:service|solution)|it\s+(?:service|solution|consult)|information\s+(?:tech|service)|telecoms?|telecommunications)\b/i,
+   'Information and Communications'],
+  [/\b(?:school|college|universit|academ(?:y|ic)|education(?:al)?|training\s+(?:provider|centre|academy)|e-?learn)\b/i,
+   'Education'],
+]
+
+/**
+ * Infer industry from company name when SIC codes are unavailable.
+ * Used for LLPs, overseas companies, and UK establishments.
+ */
+export function nameToIndustry(name: string): string | null {
+  // Known firm lookup takes priority (more specific)
+  for (const [pattern, industry] of KNOWN_FIRM_PATTERNS) {
+    if (pattern.test(name)) return industry
+  }
+  // Keyword matching as secondary fallback
+  for (const [pattern, industry] of KEYWORD_INDUSTRY_PATTERNS) {
+    if (pattern.test(name)) return industry
+  }
+  return null
+}
+
 /** 0-1 score for a company's industry. Falls back to neutral 0.45 when unknown. */
 export function industryToScore(
   industry: string | null,
