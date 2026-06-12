@@ -1,6 +1,7 @@
 import type { CompanyRecord } from './db/store'
 import { loadBenchmarks, sicToIndustry, nameToIndustry, industryToScore } from './cos-api'
 import type { RoleRisk } from './role-classifier'
+import { detectGlobalCompany } from './global-company-detector'
 
 export type ScoreLabel = 'Very Likely' | 'Likely' | 'Possible' | 'Unlikely'
 export type SizeTier = 'Micro' | 'Small' | 'Medium' | 'Large' | 'Enterprise'
@@ -8,8 +9,6 @@ export type SizeTier = 'Micro' | 'Small' | 'Medium' | 'Large' | 'Enterprise'
 export type RoleContext = {
   role: string
   risk: RoleRisk
-  /** null = API unavailable; 0+ = actual live listing count for this role at this employer */
-  jobCount: number | null
 }
 
 type Signal = {
@@ -23,7 +22,9 @@ export type ScoreBreakdown = {
   label: ScoreLabel
   capped: boolean
   capReason: string | null
-  /** Set when a role penalty was applied; holds the pre-penalty score */
+  isGlobal: boolean
+  globalNote: string | null
+  /** Set when a role penalty was applied; holds the pre-penalty score (after any global boost) */
   scoreBeforeRoleAdjustment?: number
   /** Human-readable explanation of what adjustment was made */
   roleAdjustmentNote?: string
@@ -77,6 +78,8 @@ const DISSOLVED_ZERO: ScoreBreakdown = {
   label: 'Unlikely',
   capped: true,
   capReason: 'Company is dissolved — cannot hold a sponsor licence',
+  isGlobal: false,
+  globalNote: null,
   signals: {
     licenceStatus:           { normalisedScore: 0, weight: 0.30, explanation: 'Dissolved companies cannot hold a sponsor licence.' },
     companyStatus:           { normalisedScore: 0, weight: 0.20, explanation: 'Companies House records this company as dissolved.' },
@@ -147,25 +150,12 @@ export function scoreCompany(company: CompanyRecord, roleCtx?: RoleContext): Sco
     industryExpl = `Sector: ${industry}${source}. Home Office data shows ${pct >= 70 ? 'very high' : pct >= 50 ? 'moderate' : 'lower'} Skilled Worker sponsorship activity in this industry.`
   }
 
-  // ── Signal 4: Live jobs on Reed (10%) ────────────────────────────────────
-  // When roleCtx is provided, checks for role-specific listings at this employer.
-  // When not provided, checks for general visa-sponsored listings.
+  // ── Signal 4: Live sponsored jobs on Reed (10%) ──────────────────────────
+  // General Reed sponsored-job count — role-independent company hiring signal.
   let liveJobScore: number
   let liveJobExpl: string
 
-  if (roleCtx) {
-    if (roleCtx.jobCount == null) {
-      liveJobScore = 0.50
-      liveJobExpl = `Reed.co.uk search unavailable — could not check live "${roleCtx.role}" listings at ${company.name}.`
-    } else if (roleCtx.jobCount === 0) {
-      liveJobScore = 0.10
-      liveJobExpl = `${company.name} currently has no live "${roleCtx.role}" roles on Reed.co.uk — no evidence this company actively hires for this role type.`
-    } else {
-      liveJobScore = Math.min(0.50 + roleCtx.jobCount * 0.10, 1.0)
-      const n = roleCtx.jobCount
-      liveJobExpl = `${company.name} has ${n} live "${roleCtx.role}" role${n === 1 ? '' : 's'} on Reed.co.uk — actively hiring this role type.`
-    }
-  } else if (company.liveJobCount == null) {
+  if (company.liveJobCount == null) {
     liveJobScore = 0.50
     liveJobExpl = !process.env.REED_API_KEY
       ? 'Reed.co.uk signal not configured — add REED_API_KEY to enable live job count.'
@@ -203,12 +193,16 @@ export function scoreCompany(company: CompanyRecord, roleCtx?: RoleContext): Sco
   }
 
   // ── Signal 6: Company maturity & international sector (5%) ───────────────
+  const globalInfo = detectGlobalCompany(company)
   let intlScore: number
   let intlExpl: string
 
   if (!company.chFetchedAt) {
     intlScore = 0.45
     intlExpl = 'Company maturity unknown — Companies House data needed.'
+  } else if (globalInfo.isGlobal) {
+    intlScore = 1.00
+    intlExpl = globalInfo.note ?? 'Global company with established international hiring infrastructure.'
   } else {
     const year = incorporationYear(company.incorporationDate)
     // For LLPs/overseas companies with no SIC codes, check against the inferred industry too
@@ -263,32 +257,29 @@ export function scoreCompany(company: CompanyRecord, roleCtx?: RoleContext): Sco
     intlScore      * 0.05 +
     routeScore     * 0.05
 
-  const baseScore = Math.round(rawScore * 100)
+  const rawBaseScore = Math.round(rawScore * 100)
 
-  // ── Role penalty ─────────────────────────────────────────────────────────────
-  // Rarely-sponsored role types get a multiplier applied to the final score so
-  // the headline number reflects real-world sponsorship probability, not just
-  // company quality. High-risk and neutral roles are unaffected.
-  let score = baseScore
+  // ── Global company boost (×1.15, capped at 100) ──────────────────────────
+  // Applied before the role penalty so global companies get credit for their
+  // immigration infrastructure even when a non-technical role is searched.
+  let score = globalInfo.isGlobal
+    ? Math.min(Math.round(rawBaseScore * 1.15), 100)
+    : rawBaseScore
+
+  // ── Role adjustment ──────────────────────────────────────────────────────────
+  // Applied on top of the global boost. Penalty for non-technical roles reflects
+  // real-world sponsorship probability independent of company quality signals.
   let scoreBeforeRoleAdjustment: number | undefined
   let roleAdjustmentNote: string | undefined
 
   if (roleCtx?.risk === 'low') {
-    let multiplier: number
-    let reason: string
-    if (roleCtx.jobCount === 0) {
-      multiplier = 0.40
-      reason = `0 live "${roleCtx.role}" roles found at this company on Reed, and this role type is rarely sponsored`
-    } else if (roleCtx.jobCount == null) {
-      multiplier = 0.60
-      reason = `"${roleCtx.role}" is a rarely sponsored role type`
-    } else {
-      multiplier = 0.70
-      reason = `"${roleCtx.role}" is a rarely sponsored role type (some live roles found)`
-    }
-    score = Math.round(rawScore * multiplier * 100)
-    scoreBeforeRoleAdjustment = baseScore
-    roleAdjustmentNote = `Score adjusted for "${roleCtx.role}" role — ${reason}.`
+    const multiplier = globalInfo.isGlobal ? 0.85 : 0.35
+    const preAdjustment = score
+    score = Math.round(score * multiplier)
+    scoreBeforeRoleAdjustment = preAdjustment
+    roleAdjustmentNote = globalInfo.isGlobal
+      ? `Global companies with international hiring infrastructure occasionally sponsor sales roles — lower likelihood than technical roles but not uncommon.`
+      : `UK-founded companies rarely sponsor non-technical roles like "${roleCtx.role}" — budget typically allocated to technical hires only.`
   }
 
   return {
@@ -298,6 +289,8 @@ export function scoreCompany(company: CompanyRecord, roleCtx?: RoleContext): Sco
     label: toLabel(score),
     capped: false,
     capReason: null,
+    isGlobal: globalInfo.isGlobal,
+    globalNote: globalInfo.note,
     signals: {
       licenceStatus:           { normalisedScore: licenceScore,   weight: 0.30, explanation: licenceExpl   },
       companyStatus:           { normalisedScore: chScore,        weight: 0.20, explanation: chExpl        },

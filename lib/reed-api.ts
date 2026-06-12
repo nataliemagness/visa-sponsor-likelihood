@@ -5,6 +5,22 @@ function authHeader(): string {
   return 'Basic ' + Buffer.from(`${key}:`).toString('base64')
 }
 
+function normalizeForReed(name: string): string {
+  return name
+    .replace(/\b(?:limited\s+liability\s+partnership|llp)\b/gi, '')
+    .replace(/\b(?:public\s+limited\s+company|plc)\b/gi, '')
+    .replace(/\b(?:limited|ltd\.?)\b/gi, '')
+    .replace(/\b(?:incorporated|inc\.?)\b/gi, '')
+    .replace(/\b(?:corporation|corp\.?)\b/gi, '')
+    .replace(/\bllc\b/gi, '')
+    .replace(/\b(?:uk|u\.k\.|united\s+kingdom|england|britain)\b/gi, '')
+    .replace(/\b(?:europe|emea|global|international)\b/gi, '')
+    .replace(/\b(?:group|holdings?)\b/gi, '')
+    .replace(/[(),\-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 async function reedSearch(employer: string, keywords: string): Promise<number | null> {
   const url =
     `${REED_BASE}/search?employer=${encodeURIComponent(employer)}` +
@@ -23,33 +39,23 @@ async function reedSearch(employer: string, keywords: string): Promise<number | 
  * Tries "visa sponsorship" first, then "skilled worker visa" as a fallback.
  * Returns null on API error (key missing, network failure, timeout) — callers
  * must treat null as "no data" rather than "zero jobs".
+ *
+ * Note: Reed's employer filter is used for a broad "does this company sponsor?" signal.
+ * For role-specific counts use fetchAdzunaRoleCount (lib/adzuna-api.ts) instead —
+ * Reed's employer filter does not reliably restrict to a single employer.
  */
 export async function fetchSponsoredJobCount(companyName: string): Promise<number | null> {
   if (!process.env.REED_API_KEY) return null
+  const normalized = normalizeForReed(companyName)
   try {
-    const primary = await reedSearch(companyName, 'visa sponsorship')
+    const primary = await reedSearch(normalized, 'visa sponsorship')
     if (primary === null) return null
     if (primary > 0) return primary
 
     // Primary returned 0 — try alternate phrasing before concluding zero
-    const fallback = await reedSearch(companyName, 'skilled worker visa')
+    const fallback = await reedSearch(normalized, 'skilled worker visa')
     if (fallback === null) return primary // keep the 0 rather than null
     return Math.max(primary, fallback)
-  } catch {
-    return null
-  }
-}
-
-/**
- * Returns the total number of live job listings at an employer matching a specific role
- * title or keywords. Not filtered to sponsored roles — used to detect whether a company
- * actively hires for a given role type at all.
- * Returns null on API error.
- */
-export async function fetchRoleJobCount(companyName: string, role: string): Promise<number | null> {
-  if (!process.env.REED_API_KEY) return null
-  try {
-    return await reedSearch(companyName, role)
   } catch {
     return null
   }

@@ -4,7 +4,7 @@ import { getCompanyBySlug, countCompanies, updateCompanyWithCH, updateCompanyWit
 import { scoreCompany, sizeTierLabel, yearsIncorporated } from "@/lib/scoring"
 import type { RoleContext } from "@/lib/scoring"
 import { fetchCHByName } from "@/lib/ch-api"
-import { fetchSponsoredJobCount, fetchRoleJobCount } from "@/lib/reed-api"
+import { fetchSponsoredJobCount } from "@/lib/reed-api"
 import { sicToIndustry, nameToIndustry, ensureBenchmarks } from "@/lib/cos-api"
 import { classifyRole } from "@/lib/role-classifier"
 import { getCompanyBySlug as getMockBySlug } from "@/lib/mock-data"
@@ -92,22 +92,15 @@ export default async function CompanyPage({
     // Classify role risk before building roleCtx (risk is passed into scoring)
     const roleClass = role ? classifyRole(role) : null
 
-    // Role-specific: fetch live listing count for THIS employer + role
     let roleCtx: RoleContext | undefined
     if (role && roleClass) {
-      const jobCount = process.env.REED_API_KEY
-        ? await fetchRoleJobCount(company.name, role)
-        : null
-      roleCtx = { role, risk: roleClass.risk, jobCount }
+      roleCtx = { role, risk: roleClass.risk }
     }
 
     await ensureBenchmarks()
     const breakdown = scoreCompany(company, roleCtx)
     const location = [company.town, company.county].filter(Boolean).join(", ")
-    const signalLabel = (key: string) =>
-      key === 'liveJobSignal' && role
-        ? `Live "${role}" Roles`
-        : (BASE_SIGNAL_LABELS[key] ?? key)
+    const signalLabel = (key: string) => BASE_SIGNAL_LABELS[key] ?? key
 
     return (
       <div className="min-h-screen bg-[#0a0a0a]">
@@ -126,7 +119,7 @@ export default async function CompanyPage({
           )}
 
           {roleClass && (
-            <div className={`border rounded-xl px-5 py-3.5 mb-6 text-sm flex items-start gap-3 ${
+            <div className={`border rounded-xl px-5 py-3.5 mb-3 text-sm flex items-start gap-3 ${
               roleClass.risk === 'high'
                 ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e]'
                 : roleClass.risk === 'low'
@@ -140,6 +133,28 @@ export default async function CompanyPage({
                 <span className="font-semibold">{roleClass.label}</span>
                 {' — '}
                 {roleClass.detail}
+              </div>
+            </div>
+          )}
+
+          {/* Global / local company context — shown when a role is searched */}
+          {role && breakdown.isGlobal && breakdown.globalNote && (
+            <div className="border border-[#22c55e]/20 bg-[#22c55e]/5 rounded-xl px-5 py-3 mb-6 text-sm flex items-start gap-3 text-[#22c55e]">
+              <span className="shrink-0 mt-0.5 font-bold">G</span>
+              <div>
+                <span className="font-semibold">Global company</span>
+                {' — '}
+                {breakdown.globalNote}
+              </div>
+            </div>
+          )}
+          {role && !breakdown.isGlobal && roleClass?.risk === 'low' && (
+            <div className="border border-[#2a2a2a] bg-[#111111] rounded-xl px-5 py-3 mb-6 text-sm flex items-start gap-3 text-[#9ca3af]">
+              <span className="shrink-0 mt-0.5">◉</span>
+              <div>
+                <span className="text-white font-semibold">UK-based company</span>
+                {' — '}
+                sponsorship of non-technical roles is less common. Global multinationals are significantly more likely to sponsor {role} positions.
               </div>
             </div>
           )}
@@ -193,10 +208,21 @@ export default async function CompanyPage({
                     <span>With role adjustment</span>
                     <span className="text-[#f59e0b] font-medium">{breakdown.score}</span>
                   </div>
+                  {breakdown.roleAdjustmentNote && (
+                    <p className="text-[#9ca3af] leading-relaxed pt-0.5 border-t border-[#f59e0b]/20">
+                      {breakdown.roleAdjustmentNote}
+                    </p>
+                  )}
                 </div>
               )}
 
               <div className="w-full pt-4 border-t border-[#2a2a2a] text-xs text-[#9ca3af] space-y-1.5">
+                  {breakdown.isGlobal && (
+                    <div className="flex justify-between">
+                      <span>Company type</span>
+                      <span className="text-[#22c55e] font-medium">Global</span>
+                    </div>
+                  )}
                 <div className="flex justify-between">
                   <span>Signals used</span><span className="text-white">7</span>
                 </div>
