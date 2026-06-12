@@ -2,14 +2,16 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { getCompanyBySlug, countCompanies, updateCompanyWithCH, updateCompanyWithReed } from "@/lib/db/store"
 import { scoreCompany, sizeTierLabel, yearsIncorporated } from "@/lib/scoring"
+import type { RoleContext } from "@/lib/scoring"
 import { fetchCHByName } from "@/lib/ch-api"
-import { fetchSponsoredJobCount } from "@/lib/reed-api"
+import { fetchSponsoredJobCount, fetchRoleJobCount } from "@/lib/reed-api"
 import { sicToIndustry, nameToIndustry, ensureBenchmarks } from "@/lib/cos-api"
+import { classifyRole } from "@/lib/role-classifier"
 import { getCompanyBySlug as getMockBySlug } from "@/lib/mock-data"
 import { ScoreRing } from "@/components/score-ring"
 import { SponsorHistoryChart } from "@/components/sponsor-history-chart"
 
-const REAL_SIGNAL_LABELS: Record<string, string> = {
+const BASE_SIGNAL_LABELS: Record<string, string> = {
   licenceStatus:           "Licence Rating",
   companyStatus:           "Company Status",
   industrySponsorshipRate: "Industry Sponsorship Rate",
@@ -51,10 +53,13 @@ function SigBar({ value }: { value: number }) {
 
 export default async function CompanyPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>
+  searchParams: Promise<{ role?: string }>
 }) {
-  const { slug } = await params
+  const [{ slug }, sp] = await Promise.all([params, searchParams])
+  const role = sp.role?.trim() || undefined
 
   // ── Real data path ──────────────────────────────────────────────────────────
   if (await countCompanies() > 0) {
@@ -69,7 +74,7 @@ export default async function CompanyPage({
       }
     }
 
-    // Reed: fetch if never fetched, or if TTL (24h) has expired
+    // Reed: fetch general sponsored job count if stale (24h TTL)
     const reedTtlMs = 24 * 60 * 60 * 1000
     // eslint-disable-next-line react-hooks/purity
     const nowMs = Date.now()
@@ -84,9 +89,23 @@ export default async function CompanyPage({
       }
     }
 
+    // Role-specific: fetch live listing count for this role at this employer
+    let roleCtx: RoleContext | undefined
+    if (role && process.env.REED_API_KEY) {
+      const jobCount = await fetchRoleJobCount(company.name, role)
+      roleCtx = { role, jobCount }
+    } else if (role) {
+      roleCtx = { role, jobCount: null }
+    }
+
     await ensureBenchmarks()
-    const breakdown = scoreCompany(company)
+    const breakdown = scoreCompany(company, roleCtx)
     const location = [company.town, company.county].filter(Boolean).join(", ")
+    const roleClass = role ? classifyRole(role) : null
+    const signalLabel = (key: string) =>
+      key === 'liveJobSignal' && role
+        ? `Live "${role}" Roles`
+        : (BASE_SIGNAL_LABELS[key] ?? key)
 
     return (
       <div className="min-h-screen bg-[#0a0a0a]">
@@ -101,6 +120,25 @@ export default async function CompanyPage({
           {breakdown.capped && breakdown.capReason && (
             <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-5 py-3 mb-6 text-sm text-red-400 font-medium">
               ⚠ {breakdown.capReason}
+            </div>
+          )}
+
+          {roleClass && (
+            <div className={`border rounded-xl px-5 py-3.5 mb-6 text-sm flex items-start gap-3 ${
+              roleClass.risk === 'high'
+                ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e]'
+                : roleClass.risk === 'low'
+                  ? 'bg-[#f59e0b]/10 border-[#f59e0b]/30 text-[#f59e0b]'
+                  : 'bg-[#6C47FF]/10 border-[#6C47FF]/30 text-[#6C47FF]'
+            }`}>
+              <span className="mt-0.5 shrink-0">
+                {roleClass.risk === 'high' ? '✓' : roleClass.risk === 'low' ? '⚠' : '◎'}
+              </span>
+              <div>
+                <span className="font-semibold">{roleClass.label}</span>
+                {' — '}
+                {roleClass.detail}
+              </div>
             </div>
           )}
 
@@ -122,6 +160,11 @@ export default async function CompanyPage({
               <span className="inline-flex items-center text-xs font-semibold uppercase tracking-widest px-2.5 py-1 rounded-full border bg-[#6C47FF]/10 text-[#6C47FF] border-[#6C47FF]/30">
                 Licensed Sponsor
               </span>
+              {role && (
+                <span className="inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-full border bg-[#1a1a1a] text-[#9ca3af] border-[#2a2a2a]">
+                  Role: {role}
+                </span>
+              )}
               {company.sponsorRating && (
                 <span className="inline-flex items-center text-xs font-semibold uppercase tracking-widest px-2.5 py-1 rounded-full border bg-[#1a1a1a] text-[#9ca3af] border-[#2a2a2a]">
                   {company.sponsorRating}
@@ -185,7 +228,7 @@ export default async function CompanyPage({
                   return (
                     <div key={key}>
                       <div className="flex justify-between items-center mb-1.5">
-                        <span className="text-sm font-medium text-white">{REAL_SIGNAL_LABELS[key] ?? key}</span>
+                        <span className="text-sm font-medium text-white">{signalLabel(key)}</span>
                         <span className="text-xs text-[#9ca3af] font-mono tabular-nums">{pts} / {maxPts} pts</span>
                       </div>
                       <SigBar value={signal.normalisedScore ?? 0} />

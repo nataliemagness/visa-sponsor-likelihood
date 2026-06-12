@@ -39,3 +39,18 @@ export async function fetchSponsoredJobCount(companyName: string): Promise<numbe
     return null
   }
 }
+
+/**
+ * Returns the total number of live job listings at an employer matching a specific role
+ * title or keywords. Not filtered to sponsored roles — used to detect whether a company
+ * actively hires for a given role type at all.
+ * Returns null on API error.
+ */
+export async function fetchRoleJobCount(companyName: string, role: string): Promise<number | null> {
+  if (!process.env.REED_API_KEY) return null
+  try {
+    return await reedSearch(companyName, role)
+  } catch {
+    return null
+  }
+}

@@ -4,6 +4,12 @@ import { loadBenchmarks, sicToIndustry, nameToIndustry, industryToScore } from '
 export type ScoreLabel = 'Very Likely' | 'Likely' | 'Possible' | 'Unlikely'
 export type SizeTier = 'Micro' | 'Small' | 'Medium' | 'Large' | 'Enterprise'
 
+export type RoleContext = {
+  role: string
+  /** null = API unavailable; 0+ = actual live listing count for this role at this employer */
+  jobCount: number | null
+}
+
 type Signal = {
   normalisedScore: number
   weight: number
@@ -76,7 +82,7 @@ const DISSOLVED_ZERO: ScoreBreakdown = {
   },
 }
 
-export function scoreCompany(company: CompanyRecord): ScoreBreakdown {
+export function scoreCompany(company: CompanyRecord, roleCtx?: RoleContext): ScoreBreakdown {
   const dissolved =
     company.chStatus === 'dissolved' || company.chStatus === 'liquidation'
   if (dissolved) return DISSOLVED_ZERO
@@ -135,11 +141,25 @@ export function scoreCompany(company: CompanyRecord): ScoreBreakdown {
     industryExpl = `Sector: ${industry}${source}. Home Office data shows ${pct >= 70 ? 'very high' : pct >= 50 ? 'moderate' : 'lower'} Skilled Worker sponsorship activity in this industry.`
   }
 
-  // ── Signal 4: Live sponsored jobs on Reed (10%) ───────────────────────────
+  // ── Signal 4: Live jobs on Reed (10%) ────────────────────────────────────
+  // When roleCtx is provided, checks for role-specific listings at this employer.
+  // When not provided, checks for general visa-sponsored listings.
   let liveJobScore: number
   let liveJobExpl: string
 
-  if (company.liveJobCount === null) {
+  if (roleCtx) {
+    if (roleCtx.jobCount == null) {
+      liveJobScore = 0.50
+      liveJobExpl = `Reed.co.uk search unavailable — could not check live "${roleCtx.role}" listings at this company.`
+    } else if (roleCtx.jobCount === 0) {
+      liveJobScore = 0.10
+      liveJobExpl = `No live "${roleCtx.role}" roles found at this company on Reed.co.uk — they may not actively hire for this role type.`
+    } else {
+      liveJobScore = Math.min(0.50 + roleCtx.jobCount * 0.10, 1.0)
+      const n = roleCtx.jobCount
+      liveJobExpl = `${n} live "${roleCtx.role}" role${n === 1 ? '' : 's'} at this company on Reed.co.uk — actively hiring this role type.`
+    }
+  } else if (company.liveJobCount == null) {
     liveJobScore = 0.50
     liveJobExpl = !process.env.REED_API_KEY
       ? 'Reed.co.uk signal not configured — add REED_API_KEY to enable live job count.'
@@ -157,7 +177,7 @@ export function scoreCompany(company: CompanyRecord): ScoreBreakdown {
   let sizeScore: number
   let sizeExpl: string
 
-  if (!company.chFetchedAt || company.employeeCount === null) {
+  if (!company.chFetchedAt || company.employeeCount == null) {
     sizeScore = 0.45
     sizeExpl = 'Company size unknown — Companies House data needed to estimate employee count.'
   } else {
