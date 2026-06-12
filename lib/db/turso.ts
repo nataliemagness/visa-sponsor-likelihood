@@ -264,3 +264,22 @@ export async function tursoCountEnriched(): Promise<number> {
   )
   return (res.rows[0].n as number) ?? 0
 }
+
+export async function tursoSaveBenchmarks(blob: string): Promise<void> {
+  await ensureSchema()
+  const db = getClient()
+  await db.execute({
+    sql: "INSERT OR REPLACE INTO metadata (key, value) VALUES ('industry_benchmarks', ?)",
+    args: [blob],
+  })
+}
+
+export async function tursoLoadBenchmarks(): Promise<string | null> {
+  await ensureSchema()
+  const db = getClient()
+  const res = await db.execute({
+    sql: "SELECT value FROM metadata WHERE key = 'industry_benchmarks'",
+    args: [],
+  })
+  return (res.rows[0]?.value as string) ?? null
+}

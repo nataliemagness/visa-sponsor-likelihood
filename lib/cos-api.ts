@@ -294,11 +294,39 @@ export async function downloadAndSaveBenchmarks(): Promise<IndustryBenchmarkFile
     rawTotals,
   }
 
-  fs.mkdirSync(path.dirname(BENCHMARK_PATH), { recursive: true })
-  fs.writeFileSync(BENCHMARK_PATH, JSON.stringify(result, null, 2))
+  // Persist to Turso when available (Vercel), otherwise write to local file
+  if (process.env.TURSO_URL) {
+    const { tursoSaveBenchmarks } = await import('./db/turso')
+    await tursoSaveBenchmarks(JSON.stringify(result))
+  } else {
+    try {
+      fs.mkdirSync(path.dirname(BENCHMARK_PATH), { recursive: true })
+      fs.writeFileSync(BENCHMARK_PATH, JSON.stringify(result, null, 2))
+    } catch {}
+  }
 
-  // Bust the in-process cache so scoring picks up the new values immediately
-  clearBenchmarkCache()
+  // Populate the in-process cache so scoring picks up the new values immediately
+  global.__industryBenchmarks = result.benchmarks
 
   return result
+}
+
+/**
+ * Pre-populate the benchmark cache from Turso (production) or the local file.
+ * Call this before any scoring in an async request handler.
+ */
+export async function ensureBenchmarks(): Promise<void> {
+  if (global.__industryBenchmarks) return
+  if (process.env.TURSO_URL) {
+    try {
+      const { tursoLoadBenchmarks } = await import('./db/turso')
+      const blob = await tursoLoadBenchmarks()
+      if (blob) {
+        const data = JSON.parse(blob) as IndustryBenchmarkFile
+        global.__industryBenchmarks = data.benchmarks
+        return
+      }
+    } catch {}
+  }
+  loadBenchmarks()
 }

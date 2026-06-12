@@ -4,7 +4,7 @@ import { getCompanyBySlug, countCompanies, updateCompanyWithCH, updateCompanyWit
 import { scoreCompany, sizeTierLabel, yearsIncorporated } from "@/lib/scoring"
 import { fetchCHByName } from "@/lib/ch-api"
 import { fetchSponsoredJobCount } from "@/lib/reed-api"
-import { sicToIndustry, nameToIndustry } from "@/lib/cos-api"
+import { sicToIndustry, nameToIndustry, ensureBenchmarks } from "@/lib/cos-api"
 import { getCompanyBySlug as getMockBySlug } from "@/lib/mock-data"
 import { ScoreRing } from "@/components/score-ring"
 import { SponsorHistoryChart } from "@/components/sponsor-history-chart"
@@ -84,6 +84,7 @@ export default async function CompanyPage({
       }
     }
 
+    await ensureBenchmarks()
     const breakdown = scoreCompany(company)
     const location = [company.town, company.county].filter(Boolean).join(", ")
 

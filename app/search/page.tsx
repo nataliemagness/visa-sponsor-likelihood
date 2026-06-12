@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { searchCompanies, countCompanies } from "@/lib/db/store"
 import { scoreCompany } from "@/lib/scoring"
+import { ensureBenchmarks } from "@/lib/cos-api"
 import { SearchForm } from "@/components/search-form"
 
 function ScorePill({ score, label }: { score: number; label: string }) {
@@ -60,6 +61,7 @@ export default async function SearchPage({
   }
 
   const results = await searchCompanies(role, industry)
+  await ensureBenchmarks()
 
   return (
     <div className="min-h-screen bg-[#0a0a0a]">
