@@ -89,19 +89,21 @@ export default async function CompanyPage({
       }
     }
 
-    // Role-specific: fetch live listing count for this role at this employer
+    // Classify role risk before building roleCtx (risk is passed into scoring)
+    const roleClass = role ? classifyRole(role) : null
+
+    // Role-specific: fetch live listing count for THIS employer + role
     let roleCtx: RoleContext | undefined
-    if (role && process.env.REED_API_KEY) {
-      const jobCount = await fetchRoleJobCount(company.name, role)
-      roleCtx = { role, jobCount }
-    } else if (role) {
-      roleCtx = { role, jobCount: null }
+    if (role && roleClass) {
+      const jobCount = process.env.REED_API_KEY
+        ? await fetchRoleJobCount(company.name, role)
+        : null
+      roleCtx = { role, risk: roleClass.risk, jobCount }
     }
 
     await ensureBenchmarks()
     const breakdown = scoreCompany(company, roleCtx)
     const location = [company.town, company.county].filter(Boolean).join(", ")
-    const roleClass = role ? classifyRole(role) : null
     const signalLabel = (key: string) =>
       key === 'liveJobSignal' && role
         ? `Live "${role}" Roles`
@@ -178,6 +180,22 @@ export default async function CompanyPage({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
             <div className="bg-[#111111] border border-[#2a2a2a] rounded-2xl p-6 flex flex-col items-center justify-center gap-4">
               <ScoreRing score={breakdown.score} />
+
+              {/* Role adjustment callout */}
+              {breakdown.scoreBeforeRoleAdjustment !== undefined && (
+                <div className="w-full bg-[#f59e0b]/10 border border-[#f59e0b]/30 rounded-xl px-3 py-2.5 text-xs space-y-1.5">
+                  <p className="text-[#f59e0b] font-semibold">Score adjusted for {role} role</p>
+                  <div className="flex justify-between text-[#9ca3af]">
+                    <span>Without role adjustment</span>
+                    <span className="text-white line-through">{breakdown.scoreBeforeRoleAdjustment}</span>
+                  </div>
+                  <div className="flex justify-between text-[#9ca3af]">
+                    <span>With role adjustment</span>
+                    <span className="text-[#f59e0b] font-medium">{breakdown.score}</span>
+                  </div>
+                </div>
+              )}
+
               <div className="w-full pt-4 border-t border-[#2a2a2a] text-xs text-[#9ca3af] space-y-1.5">
                 <div className="flex justify-between">
                   <span>Signals used</span><span className="text-white">7</span>

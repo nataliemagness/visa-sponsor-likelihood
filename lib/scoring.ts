@@ -1,11 +1,13 @@
 import type { CompanyRecord } from './db/store'
 import { loadBenchmarks, sicToIndustry, nameToIndustry, industryToScore } from './cos-api'
+import type { RoleRisk } from './role-classifier'
 
 export type ScoreLabel = 'Very Likely' | 'Likely' | 'Possible' | 'Unlikely'
 export type SizeTier = 'Micro' | 'Small' | 'Medium' | 'Large' | 'Enterprise'
 
 export type RoleContext = {
   role: string
+  risk: RoleRisk
   /** null = API unavailable; 0+ = actual live listing count for this role at this employer */
   jobCount: number | null
 }
@@ -21,6 +23,10 @@ export type ScoreBreakdown = {
   label: ScoreLabel
   capped: boolean
   capReason: string | null
+  /** Set when a role penalty was applied; holds the pre-penalty score */
+  scoreBeforeRoleAdjustment?: number
+  /** Human-readable explanation of what adjustment was made */
+  roleAdjustmentNote?: string
   signals: {
     licenceStatus: Signal
     companyStatus: Signal
@@ -150,14 +156,14 @@ export function scoreCompany(company: CompanyRecord, roleCtx?: RoleContext): Sco
   if (roleCtx) {
     if (roleCtx.jobCount == null) {
       liveJobScore = 0.50
-      liveJobExpl = `Reed.co.uk search unavailable — could not check live "${roleCtx.role}" listings at this company.`
+      liveJobExpl = `Reed.co.uk search unavailable — could not check live "${roleCtx.role}" listings at ${company.name}.`
     } else if (roleCtx.jobCount === 0) {
       liveJobScore = 0.10
-      liveJobExpl = `No live "${roleCtx.role}" roles found at this company on Reed.co.uk — they may not actively hire for this role type.`
+      liveJobExpl = `${company.name} currently has no live "${roleCtx.role}" roles on Reed.co.uk — no evidence this company actively hires for this role type.`
     } else {
       liveJobScore = Math.min(0.50 + roleCtx.jobCount * 0.10, 1.0)
       const n = roleCtx.jobCount
-      liveJobExpl = `${n} live "${roleCtx.role}" role${n === 1 ? '' : 's'} at this company on Reed.co.uk — actively hiring this role type.`
+      liveJobExpl = `${company.name} has ${n} live "${roleCtx.role}" role${n === 1 ? '' : 's'} on Reed.co.uk — actively hiring this role type.`
     }
   } else if (company.liveJobCount == null) {
     liveJobScore = 0.50
@@ -257,10 +263,38 @@ export function scoreCompany(company: CompanyRecord, roleCtx?: RoleContext): Sco
     intlScore      * 0.05 +
     routeScore     * 0.05
 
-  const score = Math.round(rawScore * 100)
+  const baseScore = Math.round(rawScore * 100)
+
+  // ── Role penalty ─────────────────────────────────────────────────────────────
+  // Rarely-sponsored role types get a multiplier applied to the final score so
+  // the headline number reflects real-world sponsorship probability, not just
+  // company quality. High-risk and neutral roles are unaffected.
+  let score = baseScore
+  let scoreBeforeRoleAdjustment: number | undefined
+  let roleAdjustmentNote: string | undefined
+
+  if (roleCtx?.risk === 'low') {
+    let multiplier: number
+    let reason: string
+    if (roleCtx.jobCount === 0) {
+      multiplier = 0.40
+      reason = `0 live "${roleCtx.role}" roles found at this company on Reed, and this role type is rarely sponsored`
+    } else if (roleCtx.jobCount == null) {
+      multiplier = 0.60
+      reason = `"${roleCtx.role}" is a rarely sponsored role type`
+    } else {
+      multiplier = 0.70
+      reason = `"${roleCtx.role}" is a rarely sponsored role type (some live roles found)`
+    }
+    score = Math.round(rawScore * multiplier * 100)
+    scoreBeforeRoleAdjustment = baseScore
+    roleAdjustmentNote = `Score adjusted for "${roleCtx.role}" role — ${reason}.`
+  }
 
   return {
     score,
+    scoreBeforeRoleAdjustment,
+    roleAdjustmentNote,
     label: toLabel(score),
     capped: false,
     capReason: null,
