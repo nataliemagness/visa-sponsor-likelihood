@@ -261,6 +261,9 @@ export default async function CompanyPage({
                   </span>
                 </div>
               </div>
+              <p className="text-xs text-[#9ca3af] leading-relaxed pt-4 border-t border-[#2a2a2a]">
+                This is an estimate, not a guarantee. Confirm sponsorship directly with the employer before applying.
+              </p>
             </div>
 
             <div className="md:col-span-2 bg-[#111111] border border-[#2a2a2a] rounded-2xl p-6">
@@ -493,6 +496,9 @@ export default async function CompanyPage({
                 <span>Percentile</span><span className="text-white">{mock.percentile}th</span>
               </div>
             </div>
+            <p className="text-xs text-[#9ca3af] leading-relaxed pt-4 border-t border-[#2a2a2a]">
+              This is an estimate, not a guarantee. Confirm sponsorship directly with the employer before applying.
+            </p>
           </div>
 
           <div className="md:col-span-2 bg-[#111111] border border-[#2a2a2a] rounded-2xl p-6">

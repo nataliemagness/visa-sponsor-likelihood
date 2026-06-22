@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server'
 import { runHistoricSeed } from '@/lib/seed-historic'
 
-// Allow up to 5 minutes — XLSX download + 200 CH fetches takes ~2.5 min
+// Allow up to 5 minutes — XLSX download (~40s) + 300 CH fetches (~236s) ≈ 276s
 export const maxDuration = 300
 
 export async function POST() {
   try {
     const result = await runHistoricSeed({
-      chBatchLimit: 200,
+      chBatchLimit: 300,
       onProgress: msg => console.log('[seed:historic]', msg),
     })
 

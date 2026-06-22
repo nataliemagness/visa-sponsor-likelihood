@@ -243,13 +243,13 @@ export async function tursoGetUnenriched(limit?: number): Promise<CompanyRecord[
   const sql = limit
     ? `SELECT * FROM companies WHERE ch_fetched_at IS NULL
        ORDER BY
-         CASE WHEN sponsor_rating LIKE 'A%' THEN 0 ELSE 1 END,
+         CASE WHEN lower(sponsor_rating) LIKE '%(a %' THEN 0 ELSE 1 END,
          CASE WHEN sponsor_route LIKE '%killed%' THEN 0 ELSE 1 END,
          name
        LIMIT ?`
     : `SELECT * FROM companies WHERE ch_fetched_at IS NULL
        ORDER BY
-         CASE WHEN sponsor_rating LIKE 'A%' THEN 0 ELSE 1 END,
+         CASE WHEN lower(sponsor_rating) LIKE '%(a %' THEN 0 ELSE 1 END,
          CASE WHEN sponsor_route LIKE '%killed%' THEN 0 ELSE 1 END,
          name`
   const res = await db.execute({ sql, args: limit ? [limit] : [] })

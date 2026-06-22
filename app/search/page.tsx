@@ -90,10 +90,13 @@ export default async function SearchPage({
         </div>
 
         {role && (
-          <p className="text-xs text-[#9ca3af] bg-[#111111] border border-[#2a2a2a] rounded-xl px-4 py-3 mb-6">
+          <p className="text-xs text-[#9ca3af] bg-[#111111] border border-[#2a2a2a] rounded-xl px-4 py-3 mb-3">
             Showing all licensed sponsors matching your search. Role-specific matching requires historic visa certificate data — coming soon.
           </p>
         )}
+        <p className="text-xs text-[#9ca3af] mb-6">
+          Scores are estimates based on public government data and company signals — not guarantees of sponsorship. Always verify directly with employers.
+        </p>
 
         {results.length === 0 ? (
           <div className="bg-[#111111] border border-[#2a2a2a] rounded-2xl p-12 text-center mb-8">

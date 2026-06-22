@@ -169,7 +169,7 @@ export default function AdminPage() {
             <h2 className="text-base font-semibold text-white">Industry Benchmarks + CH Enrichment</h2>
           </div>
           <p className="text-sm text-[#9ca3af] max-w-xl leading-relaxed mb-3">
-            Downloads the Home Office Work Sponsorship CoS XLSX to build industry-level sponsorship benchmarks, then pre-fetches Companies House data (status, SIC codes, employee tier) for the top 200 unenriched companies.
+            Downloads the Home Office Work Sponsorship CoS XLSX to build industry-level sponsorship benchmarks, then pre-fetches Companies House data (status, SIC codes, employee tier) for the next 300 unenriched companies.
           </p>
           <div className="text-xs text-[#9ca3af]/40 font-mono break-all mb-2">
             gov.uk/government/statistical-data-sets/managed-migration-datasets
@@ -198,7 +198,7 @@ export default function AdminPage() {
             {seedingHistoric ? (
               <span className="flex items-center justify-center gap-2">
                 <span className="w-3.5 h-3.5 border-2 border-[#6C47FF]/40 border-t-[#6C47FF] rounded-full animate-spin" />
-                Building benchmarks + fetching CH — up to 3 minutes…
+                Building benchmarks + fetching CH — up to 5 minutes…
               </span>
             ) : "Seed industry benchmarks + CH data"}
           </button>

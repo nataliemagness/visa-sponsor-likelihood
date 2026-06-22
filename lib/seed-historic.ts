@@ -28,15 +28,16 @@ function sleep(ms: number): Promise<void> {
  *  2. Batch-fetches Companies House data for companies that haven't been enriched yet,
  *     prioritising A-rated Skilled Worker sponsors.
  *
- * Rate limit: CH API allows 600 req / 5 min ≈ 2 req/sec.
- * chBatchLimit caps the number of new CH fetches per run to keep the operation time bounded.
- * Default 200 ≈ ~2 minutes. Set to Infinity in CLI scripts.
+ * Rate limit: CH API allows 600 req / 5 min ≈ 2 req/sec. At 530ms between requests
+ * (~1.89 req/sec) we stay safely under. Rate limit is not the constraint — Vercel's
+ * 300s maxDuration is. 300 fetches ≈ 236s CH loop + ~40s overhead = ~276s (24s margin).
+ * chBatchLimit caps the number of new CH fetches per run. Set to Infinity in CLI scripts.
  */
 export async function runHistoricSeed(options?: {
   chBatchLimit?: number
   onProgress?: (msg: string) => void
 }): Promise<HistoricSeedResult> {
-  const { chBatchLimit = 200, onProgress = () => {} } = options ?? {}
+  const { chBatchLimit = 300, onProgress = () => {} } = options ?? {}
   const start = Date.now()
 
   if (await countCompanies() === 0) {

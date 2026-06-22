@@ -161,6 +161,10 @@ export default async function Home() {
           </div>
 
         </div>
+
+        <p className="text-xs text-[#9ca3af] mt-5 leading-relaxed">
+          Scores are estimates based on public government data and company signals — not guarantees of sponsorship. Always verify directly with employers.
+        </p>
       </div>
 
       {/* ── How it works ────────────────────────────────────────────────────── */}
